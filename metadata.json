@@ -1,0 +1,5 @@
+{
+  "name": "Test Image Forge",
+  "description": "A comprehensive tool for developers and QA engineers to generate diverse image files for testing. Create standard formats, security payloads (XSS, XXE), and edge-case anomalies (fake huge headers, EICAR signatures) to robustly test image processing pipelines.",
+  "requestFramePermissions": []
+}
